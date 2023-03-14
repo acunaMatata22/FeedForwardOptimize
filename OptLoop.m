@@ -110,7 +110,9 @@ xlabel('Step Size (mm)');
 
 % Save Data
 Data = table(ErrorData(:,1), ErrorData(:,2), ErrorData(:,3), 'VariableNames', {'Step', 'Gain', 'Step_Error'});
-save('Results/ErrorData.mat', 'Data');
+writematrix(ErrorData,'Results/DataSamples.csv');
+writematrix(OptParams,'Results/OptParams.csv');
+save('Results/DataSamples.mat', 'Data');
 save('Results/OptimumGains.mat', 'OptParams');
 saveas(f1,'Results/Aff Error.png');
 saveas(f3,'Results/Optimization Curve.png');
