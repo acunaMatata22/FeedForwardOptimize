@@ -1,31 +1,23 @@
-%% SETUP CONTROLLER
-disp('Adding the controller Matlab library to the path.')
-run('AEROPATH.m')
-
-% Setup parameters
-samplePeriod = 1;
-dt = samplePeriod*.001;
-axes = [0]; % X (using default names)
-
-% Initialization
-handle = A3200Init();
-
-% Home
-disp('Enabling and homing X axis.')
-A3200MotionEnable(handle, 1, axes)
-A3200MotionHome(handle, 1, axes)
-
-%% SETUP OPTIMIZATION
+%% OPTIMIZATION PARAMS
 % Aff = 66.04; % Initialize acceleration gain
-step_sizes = logspace(-2.1,1.1,20);
 speed = 300;
-testValues = 0:2:80;
-n_vals = length(testValues);
-n_steps = length(step_sizes);
-ErrorData = zeros(n_vals*n_steps,3); 
+step_sizes = 10;
+AffValues = 40;
 epsilon_settled = .05;
 epsilon_converged = .01;
+
+%% SETUP CONTROLLER
+CTLR = Controller([0],300);
+
+% try
+
+%% SETUP
+samplePeriod = 1; % in ms
+n_vals = length(AffValues);
+n_steps = length(step_sizes);
+ErrorData = zeros(n_vals*n_steps,3); 
 OptParams = zeros(n_steps,1);
+GAINAFF = A3200ParameterId.GainAff;
 
 %% TEST LOOP
 
@@ -35,34 +27,36 @@ f1.Position = [200 200 900 600];
 % axis([min(testValues) max(testValues) 0 0.009]); % Want it dynamically adjusting
 
 for i = 1:length(step_sizes)
+    CTLR.home; % Home between step sizes to redistribute lube?
     step = step_sizes(i);
-    figure(f1);
+%     figure(f1);
     step_time = step / speed; % Earliest time before finishing step
-    h = animatedline; % New line for a new step size
-    h.Color = [mod(step*43.419,1) mod(step*63.713,1) mod((step*29.301),1)];
+%     h = animatedline; % New line for a new step size
+%     h.Color = [mod(step*43.419,1) mod(step*63.713,1) mod((step*29.301),1)];
 %     f2 = figure(i+2);
 
     % Change number of samples
-    sampleCount = round(1.7*step_time/dt) + 7 + 120;
-    dataCollHandle = DataColInit(handle, samplePeriod, sampleCount);
+    sampleCount = round(1.7*step_time/(.001*samplePeriod)) + 7 + 120;
+    CTLR = CTLR.SetDataColLength(sampleCount,samplePeriod);
 %     stepErrorHist = zeros(n_vals,sampleCount);
     
 
-    for iter = 1:length(testValues)
-        gain = testValues(iter); %TODO, turn into helper function
+    for iter = 1:length(AffValues)
+        gain = AffValues(iter); %TODO, turn into helper function
 
-        [posData,velData,refData] = testGain(handle,dataCollHandle,sampleCount,axes,step,speed,gain);
+        % Update Parameter
+        A3200ParameterSetValue(CTLR.handle,GAINAFF,0,gain);
+        [posData,velData,refData] = CTLR.TestGain(step);
         settleInd = abs(refData - step) < epsilon_settled*step;
     
         % Compile error
-        stepErrorOld = rms(posData(settleInd) - refData(settleInd));
         stepError = rmse(posData(settleInd), refData(settleInd));
 
         % Plot
-        figure(f1);
-        disp(['Error = ', num2str(stepError)]);
-        addpoints(h,gain,stepError);
-        drawnow
+%         figure(f1);
+%         disp(['Error = ', num2str(stepError)]);
+%         addpoints(h,gain,stepError);
+%         drawnow
 %         figure(f2);
 %         plotResponse(f2, posData,velData,refData,'b');
 
@@ -73,7 +67,7 @@ for i = 1:length(step_sizes)
     
     % Find minimum error for step
     f = fit(ErrorData((i-1)*n_vals+1:i*n_vals,2), ErrorData((i-1)*n_vals+1:i*n_vals,3),'Fourier8');
-    xsample = min(testValues):.005:max(testValues);
+    xsample = min(AffValues):.005:max(AffValues);
     yfit = f(xsample);
     [miny, minI] = min(yfit);
     OptParams(i) = xsample(minI);
@@ -117,9 +111,15 @@ save('Results/OptimumGains.mat', 'OptParams');
 saveas(f1,'Results/Aff Error.png');
 saveas(f3,'Results/Optimization Curve.png');
 
+logSizes = log(step_sizes);
 
-%% Free Resources
-disp('Freeing the resources used by the data collection configuration.')
-A3200DataCollectionConfigFree(dataCollHandle);
-disp('Disconnecting from the A3200')
-A3200Disconnect(handle);
+
+% %% Free Controller Handles
+% disp('SUCCESS');
+% CTLR.Free;
+% 
+% catch ME
+%     disp('FAILURE');
+%     CTLR.Free;
+%     rethrow(ME);
+% end
