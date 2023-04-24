@@ -1,8 +1,8 @@
 %% OPTIMIZATION PARAMS
 % Aff = 66.04; % Initialize acceleration gain
 speed = 300;
-step_sizes = logspace(-3,1.2,30);
-AffValues = 0:.5:80;
+step_sizes = 10;
+AffValues = 40;
 epsilon_settled = .05;
 epsilon_converged = .01;
 
@@ -17,7 +17,7 @@ n_vals = length(AffValues);
 n_steps = length(step_sizes);
 ErrorData = zeros(n_vals*n_steps,3); 
 OptParams = zeros(n_steps,1);
-GAINAFF = A3200
+GAINAFF = A3200ParameterId.GainAff;
 
 %% TEST LOOP
 
@@ -27,12 +27,13 @@ f1.Position = [200 200 900 600];
 % axis([min(testValues) max(testValues) 0 0.009]); % Want it dynamically adjusting
 
 for i = 1:length(step_sizes)
+    CTLR.home; % Home between step sizes to redistribute lube?
     step = step_sizes(i);
-    figure(f1);
+%     figure(f1);
     step_time = step / speed; % Earliest time before finishing step
-    h = animatedline; % New line for a new step size
-    h.Color = [mod(step*43.419,1) mod(step*63.713,1) mod((step*29.301),1)];
-    f2 = figure(i+2);
+%     h = animatedline; % New line for a new step size
+%     h.Color = [mod(step*43.419,1) mod(step*63.713,1) mod((step*29.301),1)];
+%     f2 = figure(i+2);
 
     % Change number of samples
     sampleCount = round(1.7*step_time/(.001*samplePeriod)) + 7 + 120;
@@ -52,12 +53,12 @@ for i = 1:length(step_sizes)
         stepError = rmse(posData(settleInd), refData(settleInd));
 
         % Plot
-        figure(f1);
-        disp(['Error = ', num2str(stepError)]);
-        addpoints(h,gain,stepError);
-        drawnow
-        figure(f2);
-        plotResponse(f2, posData,velData,refData,'b');
+%         figure(f1);
+%         disp(['Error = ', num2str(stepError)]);
+%         addpoints(h,gain,stepError);
+%         drawnow
+%         figure(f2);
+%         plotResponse(f2, posData,velData,refData,'b');
 
         % Save Data
         ErrorData(iter+(i-1)*n_vals,:) = [step, gain, stepError];
@@ -110,10 +111,12 @@ save('Results/OptimumGains.mat', 'OptParams');
 saveas(f1,'Results/Aff Error.png');
 saveas(f3,'Results/Optimization Curve.png');
 
+logSizes = log(step_sizes);
 
-% %% Free Controller Handles
-% disp('SUCCESS');
-% CTLR.Free;
+
+% Free Controller Handles
+disp('SUCCESS');
+CTLR.Free;
 % 
 % catch ME
 %     disp('FAILURE');

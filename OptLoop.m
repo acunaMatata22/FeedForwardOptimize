@@ -9,7 +9,6 @@ epsilon_converged = .01;
 %% SETUP CONTROLLER
 CTLR = Controller([0],300);
 
-% try
 
 %% SETUP
 samplePeriod = 1; % in ms
@@ -30,12 +29,12 @@ for i = 1:length(step_sizes)
     CTLR.home; % Home between step sizes to redistribute lube?
     step = step_sizes(i);
 %     figure(f1);
-    step_time = step / speed; % Earliest time before finishing step
 %     h = animatedline; % New line for a new step size
 %     h.Color = [mod(step*43.419,1) mod(step*63.713,1) mod((step*29.301),1)];
 %     f2 = figure(i+2);
 
     % Change number of samples
+    step_time = step / speed; % Earliest time before finishing step
     sampleCount = round(1.7*step_time/(.001*samplePeriod)) + 7 + 120;
     CTLR = CTLR.SetDataColLength(sampleCount,samplePeriod);
 %     stepErrorHist = zeros(n_vals,sampleCount);
@@ -114,12 +113,6 @@ saveas(f3,'Results/Optimization Curve.png');
 logSizes = log(step_sizes);
 
 
-% %% Free Controller Handles
-% disp('SUCCESS');
-% CTLR.Free;
-% 
-% catch ME
-%     disp('FAILURE');
-%     CTLR.Free;
-%     rethrow(ME);
-% end
+% Free Controller Handles
+disp('SUCCESS');
+CTLR.Free;

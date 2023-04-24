@@ -12,6 +12,7 @@ classdef Controller
         dt
         sampleCount
         speed
+        settleEpsilon
     end
     
     methods
@@ -19,7 +20,7 @@ classdef Controller
             %CONTROLLER Constructor. Define the sampling period in ms and
             %an array of which axes to use. Enables the axes and homes.
             %   
-            disp('Adding the controller Matlab library to the path.')
+%             disp('Adding the controller Matlab library to the path.')
             run('AEROPATH.m')
             obj.handle = A3200Init();
             obj.axes = axes;
@@ -27,10 +28,44 @@ classdef Controller
             A3200MotionEnable(obj.handle, 1, axes)
             A3200MotionHome(obj.handle, 1, axes)
             obj.speed = speed;
+            obj.samplePeriod = 1;
+            obj.dt = .001*obj.samplePeriod;
+            obj.settleEpsilon = .10;
         end
 
-        function home(obj)
+        function UpdateParam(obj,paramType, newGains)
+            % Update parameters
+            GAINAFF = A3200ParameterId.GainAff;
+            GAINPFF = A3200ParameterId.GainPff;
+            GAINVff = A3200ParameterId.GainVff;
+            GAINJff = A3200ParameterId.GainJff;
+            switch paramType
+                case 'A'
+                    % Only Acceleration is specified
+                    assert(length(newGains) == 1, 'Wrong number of gains for A');
+                    A3200ParameterSetValue(obj.handle,GAINAFF,0,newGains);
+                case 'PVAJ'
+                    % Position, velocity, acceleration, jerk parameters
+                    assert(length(newGains) == 4, 'Wrong number of gains for PVAJ');
+                    A3200ParameterSetValue(obj.handle,GAINPFF,0,newGains(1));
+                    A3200ParameterSetValue(obj.handle,GAINVFF,0,newGains(2));
+                    A3200ParameterSetValue(obj.handle,GAINAFF,0,newGains(3));
+                    A3200ParameterSetValue(obj.handle,GAINJFF,0,newGains(4));
+                otherwise
+                    error('Incompatable parameter type');
+            end
+        end
+
+        function Home(obj)
             A3200MotionHome(obj.handle, 1, obj.axes)
+        end
+
+        function obj = GetDataCol(obj,step)
+            % Quickly get the datacollector obj. Uses default speed and
+            % sample Period as per controller object.
+            step_time = step / obj.speed;
+            obj.sampleCount = round(1.7*step_time/(.001*obj.samplePeriod)) + 7 + 120;
+            obj = obj.SetDataColLength(obj.sampleCount,obj.samplePeriod);
         end
         
         function obj = SetDataColLength(obj,sampleCount,samplePeriod)
@@ -83,7 +118,18 @@ classdef Controller
             % Return to 0
             A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, speed)
             A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
-            end
+        end
+
+        function stepError = MeasureStep(obj, step)
+            [posData,~,refData] = TestGain(obj, step);
+            settleInd = abs(refData - step) < obj.settleEpsilon*step;
+            stepError = rmse(posData(settleInd), refData(settleInd));
+        end
+
+        function Move(obj, position)
+            A3200MotionMoveAbs(obj.handle, 1, obj.axes, position, obj.speed)
+            A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);            
+        end
     end
 end
 
