@@ -9,12 +9,12 @@ switch paramType
         % Only Acceleration is specified
         assert(length(newGains) == 1, 'Wrong number of gains for A');
         A3200ParameterSetValue(CTLR.handle,GAINAFF,0,newGains);
-    case 'AV'
+    case {'VA', 'AV'}
         % Position, velocity
         assert(length(newGains) == 2, 'Wrong number of gains for VA');
         A3200ParameterSetValue(CTLR.handle,GAINVFF,0,newGains(2));
         A3200ParameterSetValue(CTLR.handle,GAINAFF,0,newGains(3));
-    case {'PVAJ','JAVP'}
+    case {'PVAJ','JAVP')
         % Position, velocity, acceleration, jerk parameters
         assert(length(newGains) == 4, 'Wrong number of gains for PVAJ');
         A3200ParameterSetValue(CTLR.handle,GAINPFF,0,newGains(1));

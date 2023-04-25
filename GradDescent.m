@@ -5,19 +5,16 @@ GAINVff = A3200ParameterId.GainVff;
 GAINJff = A3200ParameterId.GainJff;
 
 %% OPTIMIZATION PARAMS
-% Aff = 66.04; % Initialize acceleration gain
 speed = 300;
-step_sizes = logspace(-3.5,1.2,10);
+step_sizes = logspace(-3.5,1.2,10)';
 epsilon_settled = .1;
-epsilon_converged = .3;
-delta = 1;
-batch = 8; % Number of times repeating a value
-alpha = 4; % Learning rate
-beta = 100000;
+epsilon_converged = .1;
+delta = [1 .7];
+batch = 12; % Number of times repeating a value
+alpha = 10E5; % Learning rate
 
-paramType = 'A';
-paramsList = [GAINAFF];
-curGains = [50]; % Starting values
+paramType = 'AV';
+curGains = [50 10]; % Starting values
 
 %% SETUP CONTROLLER
 CTLR = Controller([0],300);
@@ -25,7 +22,7 @@ CTLR = Controller([0],300);
 %% SETUP
 samplePeriod = 1; % in ms
 n_steps = length(step_sizes);
-n_params = length(paramsList);
+n_params = length(curGains);
 % ErrorData = zeros(n_vals*n_steps,3); 
 OptParams = zeros(n_steps,n_params);
 Gradients = zeros(1,n_params);
@@ -43,43 +40,47 @@ for i = 1:n_steps
 % Gradient Descent
 while rmse(curGains, prevGains) > epsilon_converged 
     CTLR.UpdateParam(paramType, curGains);
-%     baselineError = CTLR.multiTest(step, repeat)
+
+    % Display current state
+    baselineError = CTLR.multiTest(step, repeat);
+    disp(['    Current Parameters: ', num2str(curGains), ', current Error: ', num2str(baselineError)]);
 
     % Iterate over the parameters to find the gradients
     for param = 1:n_params
         % central difference approx.
         dplusGains = curGains;
         dminusGains = curGains;
-        dplusGains(param) = curGains(param) + delta;
-        dminusGains(param) = curGains(param) - delta;
+        dplusGains(param) = curGains(param) + delta(param);
+        dminusGains(param) = max([0 curGains(param) - delta(param)]);
 
         CTLR.UpdateParam(paramType, dplusGains);
         plusError = CTLR.multiTest(step, batch);
         CTLR.UpdateParam(paramType, dminusGains);
         minusError = CTLR.multiTest(step,batch);
         
-        Gradients(param) = (plusError - minusError) / 2*delta;
+        Gradients(param) = (plusError - minusError) / 2*delta(param);
     end
     
     % Update Params based on learning rate
     prevGains = curGains;
-    learning = Gradients*(alpha*beta)/epochs^.7;
-    curGains = curGains - learning
+    learning = Gradients*(alpha)/epochs^.4;
+    curGains = max([(curGains - learning); zeros(1,n_params)]);
     epochs = epochs+1;
 end
 
 % TODO
 OptParams(i,:) = curGains;
-disp(['Optimum Parameter for step ', num2str(step), ': ', num2str(OptParams(i))]);
+disp(['Optimum Parameters for step ', num2str(step), ': ', num2str(OptParams(i,:))]);
 
 end
 
 %% Plot Optimization Data
 
 f3 = figure(2);
-semilogx(step_sizes, OptParams);
+stepData = step_sizes*ones(1,n_params);
+semilogx(stepData, OptParams);
 title('Optimum Gains vs. Step Size');
-ylabel('Optimum Aff Gain');
+ylabel('Optimum Gain Value');
 xlabel('Step Size (mm)');
 
 %% Create Fit
