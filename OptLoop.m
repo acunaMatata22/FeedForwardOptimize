@@ -1,8 +1,8 @@
 %% OPTIMIZATION PARAMS
 % Aff = 66.04; % Initialize acceleration gain
 speed = 300;
-step_sizes = 10;
-AffValues = 40;
+step_sizes = logspace(-3.5,1.2,50);
+AffValues = 2:2:80;
 epsilon_settled = .05;
 epsilon_converged = .01;
 
@@ -26,7 +26,7 @@ f1.Position = [200 200 900 600];
 % axis([min(testValues) max(testValues) 0 0.009]); % Want it dynamically adjusting
 
 for i = 1:length(step_sizes)
-    CTLR.home; % Home between step sizes to redistribute lube?
+    CTLR.Home; % Home between step sizes to redistribute lube?
     step = step_sizes(i);
 %     figure(f1);
 %     h = animatedline; % New line for a new step size

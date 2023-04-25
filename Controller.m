@@ -13,6 +13,8 @@ classdef Controller
         sampleCount
         speed
         settleEpsilon
+        minMove
+        maxMove
     end
     
     methods
@@ -31,6 +33,9 @@ classdef Controller
             obj.samplePeriod = 1;
             obj.dt = .001*obj.samplePeriod;
             obj.settleEpsilon = .10;
+            obj.dataColHandle = 0;
+            obj.minMove = 10^-3.5;
+            obj.maxMove = 10^1.2;
         end
 
         function UpdateParam(obj,paramType, newGains)
@@ -64,7 +69,7 @@ classdef Controller
             % Quickly get the datacollector obj. Uses default speed and
             % sample Period as per controller object.
             step_time = step / obj.speed;
-            obj.sampleCount = round(1.7*step_time/(.001*obj.samplePeriod)) + 7 + 120;
+            obj.sampleCount = round(1.7*step_time/(obj.dt)) + 7 + 120;
             obj = obj.SetDataColLength(obj.sampleCount,obj.samplePeriod);
         end
         
@@ -93,8 +98,10 @@ classdef Controller
         end
         
         function Free(obj)
-            disp('Freeing the resources used by the data collection configuration.')
-            A3200DataCollectionConfigFree(obj.dataColHandle);
+            if obj.dataColHandle ~= 0
+                disp('Freeing the resources used by the data collection configuration.')
+                A3200DataCollectionConfigFree(obj.dataColHandle);
+            end
             disp('Disconnecting from the A3200')
             A3200Disconnect(obj.handle);
         end
@@ -102,11 +109,10 @@ classdef Controller
         function [posData,velData,refData] = TestGain(obj, step)
             % Perform a step test at a specific gain and return collected data. Returns
             % to 0 and waits until reaches 0.
-            speed = obj.speed; % use default speed
             
             % Run step
             A3200DataCollectionStart(obj.handle, obj.dataColHandle);
-            A3200MotionMoveAbs(obj.handle, 1, obj.axes, step, speed); % Try Rapid command
+            A3200MotionMoveAbs(obj.handle, 1, obj.axes, step, obj.speed); % Try Rapid command
             A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
             
             % Collect Data
@@ -116,19 +122,45 @@ classdef Controller
             refData = Converter(collectedData(3,:));
             
             % Return to 0
-            A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, speed)
+            A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, obj.speed)
             A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
         end
 
-        function stepError = MeasureStep(obj, step)
-            [posData,~,refData] = TestGain(obj, step);
-            settleInd = abs(refData - step) < obj.settleEpsilon*step;
+        function stepError = MeasureStep(obj, step, reference)
+            [posData,~,refData] = TestGain(obj, step+reference);
+            settleInd = abs(refData - (step+reference)) < obj.settleEpsilon*step;
             stepError = rmse(posData(settleInd), refData(settleInd));
         end
 
         function Move(obj, position)
             A3200MotionMoveAbs(obj.handle, 1, obj.axes, position, obj.speed)
             A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);            
+        end
+
+        function avgError = multiTest(obj, step, numTests)
+            % Test multiple times with same gains and get avg error
+            Errors = zeros(numTests,1);
+            pd = makedist('Loguniform', 'Lower',obj.minMove, 'Upper', 1);
+            randShift = random(pd,numTests,1);
+            for i = 1:numTests
+                % Goto -2
+                obj.Move(-2);
+            
+                % Random move to establish backlash alternating forward/backwards
+                if mod(i,2) == 0
+                    start = -2 + randShift(i);
+                    obj.Move(start);
+                else
+                    start = -2 - randShift(i);
+                    obj.Move(start);
+                end
+            
+                % Test move
+                obj = obj.GetDataCol(step);
+                Errors(i) = obj.MeasureStep(step, start);
+            end
+            avgError = sum(Errors) / numTests;
+
         end
     end
 end

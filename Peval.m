@@ -28,15 +28,17 @@ for i = 1:numTests
 
     % Random move to establish backlash alternating forward/backwards
     if mod(i,2) == 0
-        CTLR.Move(randShift(i));
+        start = -2 + randShift(i);
+        CTLR.Move(start);
     else
-        CTLR.Move(-randShift(i));
+        start = -2 - randshift(i);
+        CTLR.Move(start);
     end
 
     % Test move
     CTLR = CTLR.GetDataCol(c_step);
     CTLR.UpdateParam(paramType, newGains);
-    stepError = CTLR.MeasureStep(c_step);
+    stepError = CTLR.MeasureStep(c_step,start);
     errorHist(i) = stepError;
 end
 

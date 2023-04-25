@@ -13,6 +13,8 @@ classdef Controller
         sampleCount
         speed
         settleEpsilon
+        minMove
+        maxMove
     end
     
     methods
@@ -30,7 +32,10 @@ classdef Controller
             obj.speed = speed;
             obj.samplePeriod = 1;
             obj.dt = .001*obj.samplePeriod;
-            obj.settleEpsilon = .05;
+            obj.settleEpsilon = .10;
+            obj.dataColHandle = 0;
+            obj.minMove = 10^-3.5;
+            obj.maxMove = 10^1.2;
         end
 
         function UpdateParam(obj,paramType, newGains)
@@ -93,8 +98,10 @@ classdef Controller
         end
         
         function Free(obj)
-            disp('Freeing the resources used by the data collection configuration.')
-            A3200DataCollectionConfigFree(obj.dataColHandle);
+            if obj.dataColHandle ~= 0
+                disp('Freeing the resources used by the data collection configuration.')
+                A3200DataCollectionConfigFree(obj.dataColHandle);
+            end
             disp('Disconnecting from the A3200')
             A3200Disconnect(obj.handle);
         end
@@ -102,11 +109,10 @@ classdef Controller
         function [posData,velData,refData] = TestGain(obj, step)
             % Perform a step test at a specific gain and return collected data. Returns
             % to 0 and waits until reaches 0.
-            speed = obj.speed; % use default speed
             
             % Run step
             A3200DataCollectionStart(obj.handle, obj.dataColHandle);
-            A3200MotionMoveAbs(obj.handle, 1, obj.axes, step, speed); % Try Rapid command
+            A3200MotionMoveAbs(obj.handle, 1, obj.axes, step, obj.speed); % Try Rapid command
             A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
             
             % Collect Data
@@ -116,14 +122,42 @@ classdef Controller
             refData = Converter(collectedData(3,:));
             
             % Return to 0
-            A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, speed)
+            A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, obj.speed)
             A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
         end
 
-        function stepError = measureStep(obj, step)
+        function stepError = MeasureStep(obj, step)
             [posData,~,refData] = TestGain(obj, step);
-            settleInd = abs(refData - step) < obj*step;
+            settleInd = abs(refData - step) < obj.settleEpsilon*step;
             stepError = rmse(posData(settleInd), refData(settleInd));
+        end
+
+        function Move(obj, position)
+            A3200MotionMoveAbs(obj.handle, 1, obj.axes, position, obj.speed)
+            A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);            
+        end
+
+        function avgError = multiTest(obj, step, numTests)
+            % Test multiple times with same gains and get avg error
+            Errors = zeros(numTests,1);
+            pd = loguniform()
+            for i = 1:numTests
+                % Goto -2
+                obj.Move(-2);
+            
+                % Random move to establish backlash alternating forward/backwards
+                if mod(i,2) == 0
+                    obj.Move(randShift(i));
+                else
+                    obj.Move(-randShift(i));
+                end
+            
+                % Test move
+                obj = obj.GetDataCol(step);
+                Errors(i) = obj.MeasureStep(step);
+            end
+            avgError = sum(Errors) / numTests;
+
         end
     end
 end
