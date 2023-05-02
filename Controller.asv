@@ -42,13 +42,19 @@ classdef Controller
             % Update parameters
             GAINAFF = A3200ParameterId.GainAff;
             GAINPFF = A3200ParameterId.GainPff;
-            GAINVff = A3200ParameterId.GainVff;
-            GAINJff = A3200ParameterId.GainJff;
+            GAINVFF = A3200ParameterId.GainVff;
+            GAINJFF = A3200ParameterId.GainJff;
+            newGains = max([zeros(size(newGains)); newGains]);
             switch paramType
                 case 'A'
                     % Only Acceleration is specified
                     assert(length(newGains) == 1, 'Wrong number of gains for A');
                     A3200ParameterSetValue(obj.handle,GAINAFF,0,newGains);
+                case {'AV', 'VA'}
+                    % Position, velocity
+                    assert(length(newGains) == 2, 'Wrong number of gains for AV');
+                    A3200ParameterSetValue(obj.handle,GAINVFF,0,newGains(1));
+                    A3200ParameterSetValue(obj.handle,GAINAFF,0,newGains(2));
                 case 'PVAJ'
                     % Position, velocity, acceleration, jerk parameters
                     assert(length(newGains) == 4, 'Wrong number of gains for PVAJ');
@@ -69,7 +75,7 @@ classdef Controller
             % Quickly get the datacollector obj. Uses default speed and
             % sample Period as per controller object.
             step_time = step / obj.speed;
-            obj.sampleCount = round(1.7*step_time/(.001*obj.samplePeriod)) + 7 + 120;
+            obj.sampleCount = round(1.7*step_time/(obj.dt)) + 7 + 120;
             obj = obj.SetDataColLength(obj.sampleCount,obj.samplePeriod);
         end
         
@@ -121,14 +127,14 @@ classdef Controller
             velData = Converter(collectedData(2,:));
             refData = Converter(collectedData(3,:));
             
-            % Return to 0
-            A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, obj.speed)
-            A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
+%             % Return to 0
+%             A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, obj.speed)
+%             A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
         end
 
-        function stepError = MeasureStep(obj, step)
-            [posData,~,refData] = TestGain(obj, step);
-            settleInd = abs(refData - step) < obj.settleEpsilon*step;
+        function stepError = MeasureStep(obj, step, reference)
+            [posData,~,refData] = TestGain(obj, step+reference);
+            settleInd = abs(refData - (step+reference)) < obj.settleEpsilon*step;
             stepError = rmse(posData(settleInd), refData(settleInd));
         end
 
@@ -140,21 +146,34 @@ classdef Controller
         function avgError = multiTest(obj, step, numTests)
             % Test multiple times with same gains and get avg error
             Errors = zeros(numTests,1);
-            pd = loguniform()
+            max = obj.maxMove-step;
+            min = -obj.maxMove;
+            testPositions = [min/8 min/2 max/2 min max 0];
+            n_pos = length(testPositions);
+            startCenter = testPositions(1);
+            pd = makedist('Loguniform', 'Lower',obj.minMove, 'Upper', -startCenter);
+            randShift = random(pd,numTests,1);
             for i = 1:numTests
-                % Goto -2
-                obj.Move(-2);
-            
+                % Cycle through test positions for every 2 tests
+                startCenter = testPositions(mod(floor(i/2),n_pos)+1);
+
+                % Goto -1
+                A3200MotionMoveAbs(obj.handle, 1, obj.axes, startCenter, obj.speed)
+                A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
+                
                 % Random move to establish backlash alternating forward/backwards
                 if mod(i,2) == 0
-                    obj.Move(randShift(i));
+                    start = startCenter + randShift(i);
+                    A3200MotionMoveAbs(obj.handle, 1, obj.axes, start, obj.speed);
                 else
-                    obj.Move(-randShift(i));
+                    start = startCenter - randShift(i);
+                    A3200MotionMoveAbs(obj.handle, 1, obj.axes, start, obj.speed)
                 end
             
                 % Test move
                 obj = obj.GetDataCol(step);
-                Errors(i) = obj.MeasureStep(step);
+                A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
+                Errors(i) = obj.MeasureStep(step, start);
             end
             avgError = sum(Errors) / numTests;
 

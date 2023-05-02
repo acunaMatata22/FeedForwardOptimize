@@ -1,4 +1,4 @@
-function accuracy = Peval(CTLR, paramFun, paramType, numTests, stepLimits)
+function accuracy = Peval2(CTLR, fitsArray, paramType, numTests, stepLimits)
 % based on paramType, set the parameters using the function provided and a
 % random sample of tests to evaluate accuracy. Tests for steps of sizes
 % bewteen minimum and maximum for the controller
@@ -38,7 +38,7 @@ for i = 1:numTests
     % Test move
     CTLR = CTLR.GetDataCol(c_step);
     CTLR.UpdateParam(paramType, newGains);
-    stepError = CTLR.MeasureStep(c_step,start);
+    stepError = CTLR.MeasureStep(c_step,start,1);
     errorHist(i) = stepError;
 end
 

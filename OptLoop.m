@@ -28,10 +28,10 @@ f1.Position = [200 200 900 600];
 for i = 1:length(step_sizes)
     CTLR.Home; % Home between step sizes to redistribute lube?
     step = step_sizes(i);
-%     figure(f1);
-%     h = animatedline; % New line for a new step size
-%     h.Color = [mod(step*43.419,1) mod(step*63.713,1) mod((step*29.301),1)];
-%     f2 = figure(i+2);
+    figure(f1);
+    h = animatedline; % New line for a new step size
+    h.Color = [mod(step*43.419,1) mod(step*63.713,1) mod((step*29.301),1)];
+    f2 = figure(i+2);
 
     % Change number of samples
     step_time = step / speed; % Earliest time before finishing step
@@ -52,12 +52,12 @@ for i = 1:length(step_sizes)
         stepError = rmse(posData(settleInd), refData(settleInd));
 
         % Plot
-%         figure(f1);
-%         disp(['Error = ', num2str(stepError)]);
-%         addpoints(h,gain,stepError);
-%         drawnow
-%         figure(f2);
-%         plotResponse(f2, posData,velData,refData,'b');
+        figure(f1);
+        disp(['Error = ', num2str(stepError)]);
+        addpoints(h,gain,stepError);
+        drawnow
+        figure(f2);
+        plotResponse(f2, posData,velData,refData,'b');
 
         % Save Data
         ErrorData(iter+(i-1)*n_vals,:) = [step, gain, stepError];

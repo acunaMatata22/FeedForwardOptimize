@@ -35,7 +35,7 @@ classdef Controller
             obj.settleEpsilon = .10;
             obj.dataColHandle = 0;
             obj.minMove = 10^-3.5;
-            obj.maxMove = 10^1.2;
+            obj.maxMove = 10^1;
         end
 
         function UpdateParam(obj,paramType, newGains)
@@ -44,6 +44,7 @@ classdef Controller
             GAINPFF = A3200ParameterId.GainPff;
             GAINVFF = A3200ParameterId.GainVff;
             GAINJFF = A3200ParameterId.GainJff;
+            newGains = max([zeros(size(newGains)); newGains]);
             switch paramType
                 case 'A'
                     % Only Acceleration is specified
@@ -111,9 +112,9 @@ classdef Controller
             A3200Disconnect(obj.handle);
         end
 
-        function [posData,velData,refData] = TestGain(obj, step)
+        function [posData,velData,refData] = TestGain(obj, step, home)
             % Perform a step test at a specific gain and return collected data. Returns
-            % to 0 and waits until reaches 0.
+            % to 0 if home = 1
             
             % Run step
             A3200DataCollectionStart(obj.handle, obj.dataColHandle);
@@ -126,18 +127,23 @@ classdef Controller
             velData = Converter(collectedData(2,:));
             refData = Converter(collectedData(3,:));
             
-            % Return to 0
-            A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, obj.speed)
-            A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
+            if home
+                % Return to 0
+                A3200MotionMoveAbs(obj.handle, 1, obj.axes, 0, obj.speed)
+                A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
+            end
         end
 
-        function stepError = MeasureStep(obj, step, reference)
-            [posData,~,refData] = TestGain(obj, step+reference);
+        function stepError = MeasureStep(obj, step, reference, home)
+            % Tests a step and directly returns the rmse error. specify
+            % home = 1 if stage should return to 0 position after step
+            [posData,~,refData] = TestGain(obj, step+reference, home);
             settleInd = abs(refData - (step+reference)) < obj.settleEpsilon*step;
             stepError = rmse(posData(settleInd), refData(settleInd));
         end
 
         function Move(obj, position)
+            % Moves stage to specified position and waits
             A3200MotionMoveAbs(obj.handle, 1, obj.axes, position, obj.speed)
             A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);            
         end
@@ -145,12 +151,20 @@ classdef Controller
         function avgError = multiTest(obj, step, numTests)
             % Test multiple times with same gains and get avg error
             Errors = zeros(numTests,1);
-            startCenter = -1;
+            max = obj.maxMove-step;
+            min = -obj.maxMove;
+            testPositions = [min/8 min/2 max/2 min max 0];
+            n_pos = length(testPositions);
+            startCenter = testPositions(1);
             pd = makedist('Loguniform', 'Lower',obj.minMove, 'Upper', -startCenter);
             randShift = random(pd,numTests,1);
             for i = 1:numTests
-                % Goto -2
+                % Cycle through test positions for every 2 tests
+                startCenter = testPositions(mod(floor((i-1)/2),n_pos)+1);
+
+                % Goto start position
                 A3200MotionMoveAbs(obj.handle, 1, obj.axes, startCenter, obj.speed)
+                A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
                 
                 % Random move to establish backlash alternating forward/backwards
                 if mod(i,2) == 0
@@ -164,7 +178,7 @@ classdef Controller
                 % Test move
                 obj = obj.GetDataCol(step);
                 A3200MotionWaitForMotionDone(obj.handle, obj.axes, A3200WaitOption.InPosition, -1);
-                Errors(i) = obj.MeasureStep(step, start);
+                Errors(i) = obj.MeasureStep(step, start, 0);
             end
             avgError = sum(Errors) / numTests;
 
