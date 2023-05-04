@@ -45,7 +45,7 @@ for i = 1:length(step_sizes)
 
         % Update Parameter
         A3200ParameterSetValue(CTLR.handle,GAINAFF,0,gain);
-        [posData,velData,refData] = CTLR.TestGain(step);
+        [posData,velData,refData] = CTLR.TestGain(step,0);
         settleInd = abs(refData - step) < epsilon_settled*step;
     
         % Compile error
